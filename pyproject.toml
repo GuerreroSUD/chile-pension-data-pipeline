@@ -1,0 +1,12 @@
+[project]
+name = "chile-pension-data-pipeline"
+version = "0.1.0"
+description = "Pipeline de datos end-to-end basado en datos reales del sistema previsional chileno."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "duckdb>=1.5.0",
+    "loguru>=0.7.3",
+    "pandas>=3.0.1",
+    "pyarrow>=23.0.1",
+]
