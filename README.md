@@ -6,4 +6,4 @@ Pipeline de datos end-to-end basado en datos reales del sistema previsional chil
 
 ✅ [Notebook de exploración preliminar de datos](./notebooks/data-exploration.ipynb)
 
-🚧 In progress
+🚧 `pipeline.py` in progress
