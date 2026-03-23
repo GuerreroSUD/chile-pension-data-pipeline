@@ -4,6 +4,14 @@ Pipeline de datos end-to-end basado en datos reales del sistema previsional chil
 
 ## Status
 
-✅ [Notebook de exploración preliminar de datos](./notebooks/data-exploration.ipynb)
+🚧 in progress
 
-🚧 `pipeline.py` in progress
+**Realizado**
+- [X] Notebook [data-exploration.ipynb](./notebooks/data-exploration.ipynb)
+- [X] Script [main.py](main.py)
+- [X] Script [utils.py](src\utils.py)
+- [X] Script [pipeline.py](src\pipeline.py)
+
+**Pendientes**
+- [ ] README.md
+- [ ] Informe PowerBI

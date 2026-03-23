@@ -1,33 +1,62 @@
+import time
 from pathlib import Path
 
 import duckdb
+from loguru import logger
 
-from src.utils import see_data
+from src.utils import build_dim_calendario
 
 
-class Ruta:
+class Paths:
+    """Clase para centralizar las rutas de archivos usados en el pipeline, facilitando su gestión y mantenimiento."""
+
     BASE_DIR = Path(__file__).resolve().parent.parent
-    CCICO_RAW = "data/raw/informacion_mensual_ccico.csv"
-    AFILIADOS_RAW = "data/raw/caracteristicas_afiliados.csv"
-    CCICO_CURATED = "data/curated/ccico.parquet"
-    AFILIADOS_CURATED = "data/curated/afiliados.parquet"
-    DATASET_ANALYTIC = "data/processed/dataset_analitico.parquet"
+    LOG_FILE = BASE_DIR / "logs/app.log"
+    CCICO_RAW = BASE_DIR / "data/raw/informacion_mensual_ccico.csv"
+    AFILIADOS_RAW = BASE_DIR / "data/raw/caracteristicas_afiliados.csv"
+    CCICO_CURATED = BASE_DIR / "data/curated/ccico.parquet"
+    AFILIADOS_CURATED = BASE_DIR / "data/curated/afiliados.parquet"
+    CALENDARIO = BASE_DIR / "data/curated/calendario.parquet"
+    DATASET_ANALYTIC = BASE_DIR / "data/processed/dataset_analitico.parquet"
+
+
+# Configurar loguru para mostrar mensajes en consola y escribirlos en un archivo de log
+logger.add(
+    str(Paths.LOG_FILE),
+    rotation="10 MB",
+    level="INFO",
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
+)
 
 
 def run_pipeline():
-    con = duckdb.connect()
-    # validate_inputs()
-    df_ccico = build_ccico(con, Ruta.CCICO_RAW, Ruta.CCICO_CURATED)
-    df_afiliados = build_afiliados(con, Ruta.AFILIADOS_RAW, Ruta.AFILIADOS_CURATED)
-    con.close()
+    """Función principal para ejecutar el pipeline de procesamiento de datos de pensiones chilenas."""
+    start_time = time.perf_counter()
+    try:
+        logger.info("Iniciando pipeline de procesamiento de datos de pensiones chilenas.")
+        con = duckdb.connect(database=":memory:")
+        validate_inputs()
+        build_ccico(con)
+        build_afiliados(con)
+        fecha_min, fecha_max = build_dataset_analitico(con)
+        build_calendario(fecha_min, fecha_max)
+        con.close()
+        logger.info("Pipeline completado exitosamente.")
+    finally:
+        elapsed_time = time.perf_counter() - start_time
+        logger.info(f"Tiempo total del proceso: {elapsed_time:.2f} segundos.\n")
 
-    # Código de prueba para ver los DataFrames resultantes y verificar que se hayan
-    #  transformado correctamente
-    see_data(df_ccico, "CCICO")
-    see_data(df_afiliados, "Afiliados")
+
+def validate_inputs():
+    """Función para validar la existencia de los archivos de entrada antes de ejecutar el pipeline."""
+    logger.info("Validando archivos de entrada...")
+    for path in [Paths.CCICO_RAW, Paths.AFILIADOS_RAW]:
+        if not path.exists():
+            logger.error(f"Archivo no encontrado: {path}")
+            raise FileNotFoundError(f"Archivo no encontrado: {path}")
 
 
-def build_ccico(con: duckdb.DuckDBPyConnection, ccico_raw: Path, ccico_curated: Path):
+def build_ccico(con: duckdb.DuckDBPyConnection):
     """Definir y ejecutar una consulta SQL para CCICO transformando los datos según sea necesario.
 
     Explicación de la Consulta:
@@ -53,18 +82,17 @@ def build_ccico(con: duckdb.DuckDBPyConnection, ccico_raw: Path, ccico_curated: 
                 WHEN 'uno' THEN 'UNO'
             END as afp
             ,rem_imp::INTEGER AS remuneracion
-        FROM read_csv_auto('{str(ccico_raw)}')
+        FROM read_csv_auto('{str(Paths.CCICO_RAW)}')
         WHERE rem_imp IS NOT NULL AND rem_imp::INTEGER > 0
         ORDER BY id_afiliado, f_cotizacion
         """
 
     ccico = con.sql(query)
-    ccico.to_parquet(str(ccico_curated))
+    ccico.to_parquet(str(Paths.CCICO_CURATED))
+    logger.info("Archivo CCICO transformado y guardado en formato parquet.")
 
-    return ccico.to_df()
 
-
-def build_afiliados(con: duckdb.DuckDBPyConnection, afiliados_raw: Path, afiliados_curated: Path):
+def build_afiliados(con: duckdb.DuckDBPyConnection):
     """Definir y ejecutar una consulta SQL para Afiliados transformando los datos según sea necesario.
 
     Explicación de la Consulta:
@@ -117,7 +145,7 @@ def build_afiliados(con: duckdb.DuckDBPyConnection, afiliados_raw: Path, afiliad
                     COALESCE(saldoD_pesos::INTEGER, 0) +
                     COALESCE(saldoE_pesos::INTEGER, 0)
                 ) AS saldo_pesos
-            FROM read_csv_auto('{str(afiliados_raw)}')
+            FROM read_csv_auto('{str(Paths.AFILIADOS_RAW)}')
             WHERE fecha_nac IS NOT NULL
         )
 
@@ -131,6 +159,43 @@ def build_afiliados(con: duckdb.DuckDBPyConnection, afiliados_raw: Path, afiliad
         """
 
     afiliados = con.sql(query)
-    afiliados.to_parquet(str(afiliados_curated))
+    afiliados.to_parquet(str(Paths.AFILIADOS_CURATED))
+    logger.info("Archivo Afiliados transformado y guardado en formato parquet.")
 
-    return afiliados.to_df()
+
+def build_dataset_analitico(con: duckdb.DuckDBPyConnection):
+    """Se construye un dataset analítico uniendo afiliados y cotizaciones (CCICO)."""
+
+    query = f"""
+    SELECT
+        a.*,
+        c.f_cotizacion,
+        c.afp,
+        c.remuneracion
+    FROM read_parquet('{str(Paths.AFILIADOS_CURATED)}') a
+    LEFT JOIN read_parquet('{str(Paths.CCICO_CURATED)}') c
+        ON a.id_afiliado = c.id_afiliado
+    """
+
+    analitico = con.sql(query)
+    analitico.to_parquet(str(Paths.DATASET_ANALYTIC))
+    logger.info("Dataset analítico construido y guardado en formato parquet.")
+
+    # Obtener la fecha mínima y máxima de cotización para construir calendario
+    rangos = (
+        analitico.aggregate("""MIN(CAST(f_cotizacion AS DATE))::VARCHAR AS fecha_min,
+                  MAX(CAST(f_cotizacion AS DATE))::VARCHAR AS fecha_max""")
+        .to_df()
+        .iloc[0]
+    )
+    fecha_min = rangos["fecha_min"]
+    fecha_max = rangos["fecha_max"]
+    return fecha_min, fecha_max
+
+
+def build_calendario(fecha_min, fecha_max):
+    """Construye una tabla de fechas (DimCalendario) y la guarda en formato parquet."""
+    df_calendario = build_dim_calendario(fecha_min, fecha_max)
+    df_calendario.to_parquet(Paths.CALENDARIO)
+    logger.info("Tabla de calendario construida y guardada en formato parquet.")
+    print(df_calendario.head())
