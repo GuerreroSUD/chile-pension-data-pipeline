@@ -11,7 +11,7 @@ Pipeline de datos end-to-end basado en datos reales del sistema previsional chil
 - [X] Script [main.py](main.py)
 - [X] Script [utils.py](src\utils.py)
 - [X] Script [pipeline.py](src\pipeline.py)
+- [X] Informe PowerBI [PDF](bi\chile-pension.pdf)
 
 **Pendientes**
 - [ ] README.md
-- [ ] Informe PowerBI

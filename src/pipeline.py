@@ -198,4 +198,3 @@ def build_calendario(fecha_min, fecha_max):
     df_calendario = build_dim_calendario(fecha_min, fecha_max)
     df_calendario.to_parquet(Paths.CALENDARIO)
     logger.info("Tabla de calendario construida y guardada en formato parquet.")
-    print(df_calendario.head())
